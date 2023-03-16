@@ -1,0 +1,13 @@
+name: relatorio-tortura
+title: relatorio-tortura
+username:
+account: crotman
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 8581202
+bundleId: 6963914
+url: https://crotman.shinyapps.io/relatorio-tortura/
+when: 1678927935.51409
+lastSyncTime: 1678927935.51413
+asMultiple: FALSE
+asStatic: FALSE

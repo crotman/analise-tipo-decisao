@@ -1,0 +1,329 @@
+---
+title: "Relatório Tortura"
+author: "André"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(lubridate)
+library(shiny)
+library(reactable)
+
+dados <- read_csv("dados-tortura/flg_relato_tortura_uf_origem_audiencia_ano.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    data = make_date(year = ano, month = mes, day = 1)
+  ) %>% 
+  filter(
+    !is.na(sig_uf_origem_audiencia) & !is.na(flg_relato_tortura) & !is.na(ano)
+  ) %>% 
+  filter(
+    ano >= 2015
+  )
+
+
+
+```
+
+
+
+```{r  echo=FALSE}
+inputPanel(
+  
+  selectInput(
+    inputId = "select_ufs",
+    label = "UF",
+    choices = dados$sig_uf_origem_audiencia %>%  unique(),
+    selected = "AC",
+    multiple = TRUE
+  )
+
+)
+
+
+
+dados_filtrados <- reactive(
+  
+  dados %>% 
+    filter(
+      sig_uf_origem_audiencia %in% input$select_ufs | length(input$select_ufs) == 0
+    )  
+  
+)
+```
+
+
+
+# Série histórica de audiências com relatos de tortura
+
+
+
+```{r echo=FALSE}
+
+
+renderPlot({
+  
+  dados_grafico <- dados_filtrados() %>% 
+    group_by(
+      ano
+    ) %>% 
+    mutate(
+      num_total = sum(num_audiencias)
+    ) %>% 
+    ungroup() %>% 
+    group_by(ano, flg_relato_tortura) %>% 
+    summarise(
+      num_audiencias = sum(num_audiencias),
+      num_total = mean(num_total)
+    ) %>% 
+    complete(
+      flg_relato_tortura, fill = list(num_audiencias = 0)
+    ) %>% 
+    filter(
+      flg_relato_tortura == "S"
+    ) %>% 
+    mutate(
+      frac_tortura = num_audiencias/num_total
+    )
+  
+
+  ggplot(
+    dados_grafico
+  ) +
+    geom_area(
+      aes(
+        x = ano,
+        y = frac_tortura
+      ),
+      fill = "darkblue",
+      alpha = 0.5
+    ) +
+    geom_point(
+      aes(
+        x = ano,
+        y = frac_tortura
+      ),
+      color = "darkblue",
+      alpha = 0.5
+    ) +
+    theme_minimal() +
+    labs(
+      x = "Ano",
+      y = "% Tortura"
+    ) +
+    scale_y_continuous(
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    scale_x_continuous(
+      breaks = 2015:2023
+    ) +
+    ggtitle(
+      "% de audiências com relatos de tortura por ano"
+    )
+    
+  
+
+})
+
+
+
+
+
+
+
+```
+
+
+Tabela com dados anuais
+
+
+```{r}
+
+
+renderReactable({
+  
+  dados_tabela <- dados_filtrados() %>% 
+    group_by(
+      ano
+    ) %>% 
+    mutate(
+      num_total = sum(num_audiencias)
+    ) %>% 
+    ungroup() %>% 
+    group_by(ano, flg_relato_tortura) %>% 
+    summarise(
+      num_audiencias = sum(num_audiencias),
+      num_total = mean(num_total)
+    ) %>% 
+    complete(
+      flg_relato_tortura, fill = list(num_audiencias = 0)
+    ) %>% 
+    filter(
+      flg_relato_tortura == "S"
+    ) %>% 
+    mutate(
+      frac_tortura = num_audiencias/num_total
+    ) %>% 
+    select(
+      -flg_relato_tortura
+    )
+  
+  
+  reactable(
+    dados_tabela,
+    columns = list(
+      ano = colDef(
+        name = "Ano"
+      ),
+      num_audiencias = colDef(
+        name = "Audiências com tortura"
+      ),
+      num_total = colDef(
+        name = "Total Audiências"
+      ),
+      frac_tortura = colDef(
+        name = "% de Aud. com Tortura",
+        format = colFormat(
+          percent = TRUE,
+          digits = 1
+        )
+      )
+    )
+  )
+    
+})
+
+
+
+```
+
+
+
+# Série histórica de audiências com relatos de tortura por tipo penal
+
+
+```{r}
+
+
+dados_tipo_penal <- read_csv("dados-tortura/tortura_uf_tipo_penal.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    data = make_date(year = ano, month = mes, day = 1)
+  ) %>% 
+  filter(
+    !is.na(sig_uf_origem_audiencia) & !is.na(flg_relato_tortura) & !is.na(ano)
+  ) %>% 
+  filter(
+    ano >= 2015
+  ) %>% 
+  mutate(
+    tipo_penal = fct_lump(
+      f = dsc_tipo_penal,
+      n = 8,
+      other_level = "Outros"
+    )
+  ) %>% 
+  mutate(
+    tipo_penal = str_to_title(tipo_penal, locale = "pt" )
+  )
+
+
+
+
+```
+
+
+```{r}
+
+
+dados_tipo_penal_filtrados <- reactive(
+  
+  dados_tipo_penal %>% 
+    filter(
+      sig_uf_origem_audiencia %in% input$select_ufs | length(input$select_ufs) == 0
+    )  
+  
+)
+
+
+```
+
+
+
+
+```{r}
+
+renderPlot({
+  
+  dados_grafico_tipo_penal <- dados_tipo_penal_filtrados() %>% 
+    group_by(
+      ano, tipo_penal
+    ) %>% 
+    mutate(
+      num_total = sum(num_audiencias)
+    ) %>% 
+    ungroup() %>% 
+    group_by(ano, flg_relato_tortura, tipo_penal) %>% 
+    summarise(
+      num_audiencias = sum(num_audiencias),
+      num_total = mean(num_total)
+    ) %>% 
+    filter(
+      flg_relato_tortura == "S"
+    ) %>% 
+    mutate(
+      frac_tortura = num_audiencias/num_total
+    )
+  
+
+  ggplot(
+    dados_grafico_tipo_penal
+  ) +
+    geom_area(
+      aes(
+        x = ano,
+        y = frac_tortura
+      ),
+      fill = "darkblue",
+      alpha = 0.5
+    ) +
+    geom_point(
+      aes(
+        x = ano,
+        y = frac_tortura
+      ),
+      color = "darkblue",
+      alpha = 0.5
+    ) +
+    theme_minimal() +
+    labs(
+      x = "Ano",
+      y = "% Tortura"
+    ) +
+    scale_y_continuous(
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    scale_x_continuous(
+      breaks = 2015:2023
+    ) +
+    ggtitle(
+      "% de audiências com relatos de tortura por ano"
+    ) +
+    facet_wrap(
+      ~tipo_penal
+    )
+    
+  
+
+})
+
+
+
+
+```
+
+
