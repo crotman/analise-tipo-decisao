@@ -13,6 +13,9 @@ library(lubridate)
 library(shiny)
 library(reactable)
 
+
+cor_principal_grafico <- "darkred"
+
 dados <- read_csv("dados-tortura/flg_relato_tortura_uf_origem_audiencia_ano.csv") %>% 
   janitor::clean_names() %>% 
   mutate(
@@ -99,7 +102,7 @@ renderPlot({
         x = ano,
         y = frac_tortura
       ),
-      fill = "darkblue",
+      fill = cor_principal_grafico,
       alpha = 0.5
     ) +
     geom_point(
@@ -107,8 +110,17 @@ renderPlot({
         x = ano,
         y = frac_tortura
       ),
-      color = "darkblue",
+      color = cor_principal_grafico,
       alpha = 0.5
+    ) +
+    geom_text(
+      aes(
+        x = ano,
+        y = frac_tortura,
+        label = scales::percent(frac_tortura, accuracy = 0.1)
+      ),
+      nudge_y = 0.01,
+      color = cor_principal_grafico
     ) +
     theme_minimal() +
     labs(
@@ -123,6 +135,9 @@ renderPlot({
     ) +
     ggtitle(
       "% de audiências com relatos de tortura por ano"
+    ) +
+    theme(
+      axis.text = element_text(size = 14)
     )
     
   
@@ -180,10 +195,16 @@ renderReactable({
         name = "Ano"
       ),
       num_audiencias = colDef(
-        name = "Audiências com tortura"
+        name = "Audiências com tortura",
+        format = colFormat(
+          separators = TRUE
+        )
       ),
       num_total = colDef(
-        name = "Total Audiências"
+        name = "Total Audiências",
+        format = colFormat(
+          separators = TRUE
+        )
       ),
       frac_tortura = colDef(
         name = "% de Aud. com Tortura",
@@ -209,8 +230,20 @@ renderReactable({
 ```{r}
 
 
-dados_tipo_penal <- read_csv("dados-tortura/tortura_uf_tipo_penal.csv") %>% 
-  janitor::clean_names() %>% 
+dados_tipo_penal <- read_csv("dados-tortura/Left join_relato_tortura_UF_tipo_penal.csv") %>% 
+  janitor::clean_names() %>%
+  replace_na(
+    replace = list(
+      dsc_tipo_penal = "Não Classificado"
+    )
+  ) %>% 
+  mutate(
+    dsc_tipo_penal = if_else(
+      dsc_tipo_penal == "ADQUIRIR, VENDER, FORNECER E OU PRODUZIR DROGAS",
+      "Relacionados a Drogas",
+      dsc_tipo_penal
+    )
+  ) %>% 
   mutate(
     data = make_date(year = ano, month = mes, day = 1)
   ) %>% 
@@ -257,7 +290,7 @@ dados_tipo_penal_filtrados <- reactive(
 
 ```{r}
 
-renderPlot({
+renderPlot(height =  600, {
   
   dados_grafico_tipo_penal <- dados_tipo_penal_filtrados() %>% 
     group_by(
@@ -288,15 +321,24 @@ renderPlot({
         x = ano,
         y = frac_tortura
       ),
-      fill = "darkblue",
+      fill = cor_principal_grafico,
       alpha = 0.5
+    ) +
+    geom_text(
+      aes(
+        x = ano,
+        y = frac_tortura,
+        label = scales::percent(frac_tortura, accuracy = 0.1)
+      ),
+      nudge_y = 0.05,
+      color = cor_principal_grafico
     ) +
     geom_point(
       aes(
         x = ano,
         y = frac_tortura
       ),
-      color = "darkblue",
+      color = cor_principal_grafico,
       alpha = 0.5
     ) +
     theme_minimal() +
@@ -305,7 +347,8 @@ renderPlot({
       y = "% Tortura"
     ) +
     scale_y_continuous(
-      labels = scales::percent_format(accuracy = 1)
+      labels = scales::percent_format(accuracy = 1),
+      breaks = c(0, 0.20, 0.4)
     ) +
     scale_x_continuous(
       breaks = 2015:2023
@@ -314,7 +357,14 @@ renderPlot({
       "% de audiências com relatos de tortura por ano"
     ) +
     facet_wrap(
-      ~tipo_penal
+      ~tipo_penal,
+      ncol = 2      
+    ) +
+    theme(
+      axis.text = element_text(size = 14),
+      strip.text = element_text(size = 14),
+      plot.title = element_text(size = 18)
+      
     )
     
   
@@ -325,5 +375,293 @@ renderPlot({
 
 
 ```
+
+
+
+
+A tabela mostra o percentual de tortura por tipo penal. 
+
+Os valores são mostrados da seguuibnte forma: 
+
+número de audiências com relatos de tortura / total de audiências = percentual de audiências com tortura
+
+Note que, de modo geral, o número de audiências com tipo penal não classificado vai diminuindo ao longo dos anos
+
+
+
+```{r}
+
+renderReactable({
+
+  dados_tabela_tipo_penal <- dados_tipo_penal_filtrados() %>% 
+      group_by(
+        ano, tipo_penal
+      ) %>% 
+      mutate(
+        num_total = sum(num_audiencias)
+      ) %>% 
+      ungroup() %>% 
+      group_by(ano, flg_relato_tortura, tipo_penal) %>% 
+      summarise(
+        num_audiencias = sum(num_audiencias),
+        num_total = mean(num_total)
+      ) %>% 
+      filter(
+        flg_relato_tortura == "S"
+      ) %>% 
+      mutate(
+        frac_tortura = num_audiencias/num_total
+      )
+  
+  reactable(
+    dados_tabela_tipo_penal %>% 
+      ungroup() %>% 
+      mutate(
+        
+        info = str_glue("{scales::number(num_audiencias, big.mark = '.')}/{scales::number(num_total, big.mark = '.')} = {scales::percent(frac_tortura, accuracy = 0.1)}")
+        #info = str_glue("{scales::percent(frac_tortura, accuracy = 0.1)}")
+      ) %>% 
+      select(
+        ano, 
+        tipo_penal,
+        info
+      ) %>% 
+      pivot_wider(
+        names_from = tipo_penal,
+        values_from = info,
+        values_fill = "-"
+      ),
+    compact = TRUE,
+    style = list(fontSize = "60%"),
+    defaultColDef = colDef(
+      maxWidth = 90
+    ),
+    columns = list(
+      ano = colDef(
+        name = "Ano",
+        minWidth = 50
+      )
+    )
+      
+  )  
+  
+})
+
+```
+
+
+
+# Série histórica de audiências com relatos de tortura por escolaridade
+
+
+
+
+
+```{r}
+
+
+dados_escolaridade <- read_csv("dados-tortura/tortura_caracteristicas pessoais.csv") %>%
+  janitor::clean_names() %>%
+  mutate(
+    data = make_date(year = ano, month = mes, day = 1)
+  ) %>% 
+  filter(
+    !is.na(sig_uf_origem_audiencia) & !is.na(flg_relato_tortura) & !is.na(ano)
+  ) %>% 
+  filter(
+    ano >= 2015
+  ) 
+
+
+
+
+```
+
+
+```{r}
+
+
+dados_escolaridade_filtrados <- reactive(
+  
+  dados_escolaridade %>% 
+    filter(
+      sig_uf_origem_audiencia %in% input$select_ufs | length(input$select_ufs) == 0
+    )  
+  
+)
+
+
+```
+
+
+
+
+```{r}
+
+renderPlot(height =  600, {
+  
+  dados_grafico_escolaridade <- dados_escolaridade_filtrados() %>% 
+    group_by(
+      ano, dsc_escolaridade
+    ) %>% 
+    mutate(
+      num_total = sum(num_audiencias)
+    ) %>% 
+    ungroup() %>% 
+    group_by(ano, flg_relato_tortura, dsc_escolaridade) %>% 
+    summarise(
+      num_audiencias = sum(num_audiencias),
+      num_total = mean(num_total)
+    ) %>% 
+    filter(
+      flg_relato_tortura == "S"
+    ) %>% 
+    mutate(
+      frac_tortura = num_audiencias/num_total
+    )
+  
+
+  ggplot(
+    dados_grafico_escolaridade
+  ) +
+    geom_area(
+      aes(
+        x = ano,
+        y = frac_tortura
+      ),
+      fill = cor_principal_grafico,
+      alpha = 0.5
+    ) +
+    geom_text(
+      aes(
+        x = ano,
+        y = frac_tortura,
+        label = scales::percent(frac_tortura, accuracy = 0.1)
+      ),
+      nudge_y = 0.05,
+      color = cor_principal_grafico
+    ) +
+    geom_point(
+      aes(
+        x = ano,
+        y = frac_tortura
+      ),
+      color = cor_principal_grafico,
+      alpha = 0.5
+    ) +
+    theme_minimal() +
+    labs(
+      x = "Ano",
+      y = "% Tortura"
+    ) +
+    scale_y_continuous(
+      labels = scales::percent_format(accuracy = 1),
+      breaks = c(0, 0.20, 0.4)
+    ) +
+    scale_x_continuous(
+      breaks = 2015:2023
+    ) +
+    ggtitle(
+      "% de audiências com relatos de tortura por ano"
+    ) +
+    facet_wrap(
+      ~dsc_escolaridade,
+      ncol = 2      
+    ) +
+    theme(
+      axis.text = element_text(size = 14),
+      strip.text = element_text(size = 14),
+      plot.title = element_text(size = 18)
+      
+    )
+    
+  
+
+})
+
+
+
+
+```
+
+
+
+
+A tabela mostra o percentual de tortura por tipo penal. 
+
+Os valores são mostrados da seguuibnte forma: 
+
+número de audiências com relatos de tortura / total de audiências = percentual de audiências com tortura
+
+Note que, de modo geral, o número de audiências com tipo penal não classificado vai diminuindo ao longo dos anos
+
+
+
+```{r}
+
+renderReactable({
+
+  dados_tabela_escolaridade <- dados_escolaridade_filtrados() %>% 
+      group_by(
+        ano, dsc_escolaridade
+      ) %>% 
+      mutate(
+        num_total = sum(num_audiencias)
+      ) %>% 
+      ungroup() %>% 
+      group_by(ano, flg_relato_tortura, dsc_escolaridade) %>% 
+      summarise(
+        num_audiencias = sum(num_audiencias),
+        num_total = mean(num_total)
+      ) %>% 
+      filter(
+        flg_relato_tortura == "S"
+      ) %>% 
+      mutate(
+        frac_tortura = num_audiencias/num_total
+      )
+  
+  reactable(
+    dados_tabela_escolaridade %>% 
+      ungroup() %>% 
+      mutate(
+        
+        info = str_glue("{scales::number(num_audiencias, big.mark = '.')}/{scales::number(num_total, big.mark = '.')} = {scales::percent(frac_tortura, accuracy = 0.1)}")
+        #info = str_glue("{scales::percent(frac_tortura, accuracy = 0.1)}")
+      ) %>% 
+      select(
+        ano, 
+        dsc_escolaridade,
+        info
+      ) %>% 
+      pivot_wider(
+        names_from = dsc_escolaridade,
+        values_from = info,
+        values_fill = "-"
+      ),
+    compact = TRUE,
+    style = list(fontSize = "60%"),
+    defaultColDef = colDef(
+      maxWidth = 90
+    ),
+    columns = list(
+      ano = colDef(
+        name = "Ano",
+        minWidth = 50
+      )
+    )
+      
+  )  
+  
+})
+
+
+
+
+
+
+
+
+
 
 
